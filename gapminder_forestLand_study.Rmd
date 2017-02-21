@@ -1,0 +1,154 @@
+---
+title: "case_study_gapminder_forestLand"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Forest Land Gapminder Study Case
+
+I decided to analyze the Forest Area Dataset, found it on gapminder Geography Dataset: https://docs.google.com/spreadsheets/d/1X4_PAIzsvaiJVSIdkcO-cH2jFdzZC-XOSYIS5gnbN64/pub?gid=0
+
+First Lets Load our Libs.
+```{r Loading Library}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(ggrepel) # Avoid Label Overlap
+
+```
+
+I hate working with .xl** files so i converted the Excel File to CSV using Apple Numbers, they use ";" as a separator, it confuses me when i imported first time without the sep param.
+```{r Beginning to work on Dataset}
+df <- read.csv("forest_land.csv",header = TRUE, sep = ";",stringsAsFactors = F)
+
+summary(df)
+
+View(df)
+
+
+```
+
+So much Na :/ , Lets just drop and perform some wrangling
+```{r Working on Data}
+#Found so much NA... Dropping Columns where all Values area NA
+df <- df[,colSums(is.na(df))<nrow(df)]
+
+#Just Find that this columns are chars.... fixing characters values
+df$X2000 <- as.integer(df$X1990)
+df$X2005 <- as.integer(df$X2005)
+
+```
+
+Done... Now we're safe to do some plots :slight_smile: 
+```{r Plot Time}
+#Gathering Columns to better plot
+gathered_df <- gather(df,"Year","value",2:5)
+     
+#Values are large here, so i choose a log scale to minimize the problem
+ggplot(gathered_df, 
+       aes(x=Forest.area..sq..km., y=log10(value+1),
+           colour = Year, size = value)) +
+      geom_point(shape=1) +
+      xlab("Country") +
+      ylab("Forest Area(sq km)")
+```
+
+So... this plot is kinda... confusing... Lets try another Graphic with Facet Wrap by Year
+
+```{r We Can do it better}
+#Need some variable to Color, lets try continents
+#luckly there's another dataset with continents of each country
+country_continents <- read.csv("Countries-Continents.csv")
+
+#excluding unecessary columns
+country_continents <- country_continents[,1:2]
+
+#merging
+gathered_continent_df <- merge(gathered_df,country_continents, by.x = c("Forest.area..sq..km."), by.y = c("Country"))
+
+#Better ScatterPlot
+ggplot(gathered_continent_df, 
+       aes(x=Forest.area..sq..km., y=log10(value+1), 
+           colour = Continent, size = value, 
+           label= Forest.area..sq..km.)) +
+      facet_wrap(~Year) +
+      geom_text_repel(size=2) +
+      geom_point(shape=1) +
+      xlab("Country") +
+      ylab("Forest Area(sq km)")
+```
+
+Its clearer but  we Still Dont Know any difference of forest area between the Years, Trying by difference now
+
+```{r Forest Area Difference}
+#Difference between the oldest and the newest area
+df$difference <- df$X2010 - df$X1990
+
+#merging, just discovered another way
+gathered_continent_df$difference <- df$difference[match(gathered_continent_df$Forest.area..sq..km.,df$Forest.area..sq..km.)]
+
+#plotting the difference
+qplot(difference, data = gathered_continent_df, 
+      fill = Continent, geom = "bar", binwidth = 145000) +
+      scale_x_continuous(breaks = seq(-500000,500000,145000)) +
+      scale_y_continuous(limits = c(0,650), breaks = seq(0,650,50))
+```
+
+Seems like there no difference in most cases(**mode = 0**, we will see it later), seems like an **South American** country lost so many forest area and an **Asian** country gets a large area lets find it.
+
+```{r Some Console operations to feed our curiosity}
+#R dont have built-in mode, so lets implement
+getmode <- function(v) {
+    uniqv <- unique(v)
+    uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+summary(gathered_continent_df$difference)
+
+getmode(gathered_continent_df$difference)
+
+#Max Difference For Each Continent, Thanks Stack Overflow
+gathered_continent_df %>% 
+      group_by(Continent) %>%
+      slice(which.max(difference)) 
+
+#Now the minimum
+gathered_continent_df %>% 
+      group_by(Continent) %>%
+      slice(which.min(difference)) 
+```
+
+Intesting, Brazil has the largest forest area but have several loss over the years
+Europe is doing a good job, Armenia is not even close the second minimum.
+
+## Additional Info
+
+```{r Everyone Loves Bars}
+ #Bar, just because everyone loves Bars, log scale can be decieving here, so im just using the original value
+ggplot(gathered_continent_df, 
+       aes(x=Year, y=value, fill = Continent)) +
+      geom_bar(stat="identity") +
+      scale_y_continuous(labels = comma)
+```
+
+```{r Freq Poly, everyone loves...no we dont..}
+ #Freq Poly of forest area
+ggplot(gathered_continent_df, aes(value,colour=Continent)) +
+      geom_freqpoly(aes(group = Continent)) + scale_x_log10() +
+      scale_x_continuous(labels = comma)
+```
+
+
+```{r}
+#Max Value for each Continent
+gathered_continent_df %>% 
+      group_by(Continent) %>%
+      slice(which.max(value)) 
+```
+
+
+Still Here? Please Submit some feedback, i will be happy if you suggest better graphics and techniques to do it better with large Datasets :), feel free to correct some grammar(sorry for my bad english :/) or bad code
